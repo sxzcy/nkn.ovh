@@ -10,6 +10,7 @@ import (
 	 "regexp"
 	 "strings"
 	 "reflect"
+	 "net/http"
 	 "runtime"
 	 "sort"
 	 "log"
@@ -22,13 +23,19 @@ type NKNOVH struct {
 	sql *Mysql
 	NodeInfo *NodeInfo
 	threads *Threads
+	http *Http
 }
 
+type Http struct {
+	NeighborClient *http.Client
+	MainClient *http.Client
+}
 
 type Threads struct {
 	Counter int
-	Routines chan struct{}
-	DirtyRoutines chan struct{}
+	Neighbors chan struct{}
+	Main chan struct{}
+	Dirty chan struct{}
 	Flush sync.Mutex
 }
 
@@ -88,7 +95,7 @@ func (o *NKNOVH) Build() error {
 		return err
 	}
 
-	o.threads = &Threads{Routines: make(chan struct{}, o.conf.Threads.MaxThreads), DirtyRoutines: make(chan struct{}, o.conf.Threads.DirtyThreads)}
+	o.threads = &Threads{Neighbors: make(chan struct{}, o.conf.Threads.Neighbors), Main: make(chan struct{}, o.conf.Threads.Main), Dirty: make(chan struct{}, o.conf.Threads.Dirty)}
 	o.threads.Counter = 0
 	o.NodeInfo = &NodeInfo{mux: sync.RWMutex{}, muxCounter: sync.Mutex{}, ips: make([]string, 0), m_nodes: map[string][]uint64{}}
 	o.NodeInfo.ANArray = map[int]map[int][]int{}
@@ -100,6 +107,11 @@ func (o *NKNOVH) Build() error {
 			o.NodeInfo.ANArray[i][n] = make([]int, 0)
 		}
 	}
+	var netTransport = &http.Transport{DisableKeepAlives: true}
+	o.http = &Http{
+					MainClient: &http.Client{Timeout: time.Duration(o.conf.MainPoll.ConnTimeout)*time.Second,Transport: netTransport,},
+					NeighborClient: &http.Client{Timeout: time.Duration(o.conf.NeighborPoll.ConnTimeout)*time.Second,Transport: netTransport,},
+				}
 	return nil
 }
 
@@ -256,10 +268,10 @@ func (o *NKNOVH) fetchNodesInfo() error {
 		dbnode.Ip = k
 		dbnode.Ids = v
 
-		r := &JsonRPCConf{Ip:k, Method:"getnodestate", Params: &json.RawMessage{'{','}'}, Timeout: time.Duration(o.conf.MainPoll.ConnTimeout)}
+		r := &JsonRPCConf{Ip:k, Method:"getnodestate", Params: &json.RawMessage{'{','}'}, Client: o.http.MainClient}
 		wg.Add(1)
-		o.threads.Routines <- struct{}{}
-		go o.getInfo(&wg, r, "UpdateNode", dbnode)
+		o.threads.Main <- struct{}{}
+		go o.getInfo(&wg, r, "UpdateNode", &o.threads.Main, dbnode)
 	}
 	wg.Wait()
 	num_routines := runtime.NumGoroutine()
@@ -311,14 +323,17 @@ func (o *NKNOVH) UpdateNodeFail(answer []byte, params interface{}) error {
 	var repeatInterval time.Duration = 3
 	var repeatTimeout time.Duration = 6
 
+	netTransport := &http.Transport{DisableKeepAlives: true}
+	client := &http.Client{Timeout: repeatTimeout*time.Second,Transport: netTransport,}
+
 	//dummy, no routines
 	var wg sync.WaitGroup
-	r := &JsonRPCConf{Ip:node_ip, Method:"getnodestate", Params: &json.RawMessage{'{','}'}, Timeout: repeatTimeout}
+	r := &JsonRPCConf{Ip:node_ip, Method:"getnodestate", Params: &json.RawMessage{'{','}'}, Client: client}
 	if len(answer) == 0 {
 		for i := 1; i < 4; i++ {
 			time.Sleep(repeatInterval * time.Second)
 			wg.Add(1)
-			if err := o.getInfo(&wg, r, "UpdateNode", params, true); err != nil {
+			if err := o.getInfo(&wg, r, "UpdateNode", &o.threads.Main, params, true); err != nil {
 				o.log.Syslog("[Retry " + strconv.Itoa(i) + "] No answer from node \"" + node_ip + "\"", "nodes")
 				continue
 			}
@@ -457,7 +472,7 @@ func (o *NKNOVH) saveANStatus() error {
 	return nil
 }
 
-func (o *NKNOVH) getInfo(wg *sync.WaitGroup, obj *JsonRPCConf, inside_method string, params ...interface{}) error {
+func (o *NKNOVH) getInfo(wg *sync.WaitGroup, obj *JsonRPCConf, inside_method string, threads *chan struct{}, params ...interface{}) error {
 	defer wg.Done()
 	var data NodeSt
 	var rawdata RPCResponse
@@ -479,7 +494,7 @@ func (o *NKNOVH) getInfo(wg *sync.WaitGroup, obj *JsonRPCConf, inside_method str
 				}
 			}
 
-			<-o.threads.Routines
+			<-*threads
 			return err
 	}
 	var err1 error = nil
@@ -494,7 +509,7 @@ func (o *NKNOVH) getInfo(wg *sync.WaitGroup, obj *JsonRPCConf, inside_method str
 					o.UpdateNodeErr(&rawdata, params[0])
 					// check for no-goroutine recursive function
 					if len(params) < 2 {
-						<-o.threads.Routines
+						<-*threads
 					}
 					return nil
 				}
@@ -523,7 +538,7 @@ func (o *NKNOVH) getInfo(wg *sync.WaitGroup, obj *JsonRPCConf, inside_method str
 			}
 		}
 
-		<-o.threads.Routines
+		<-*threads
 		return err1
 	}
 
@@ -540,7 +555,7 @@ func (o *NKNOVH) getInfo(wg *sync.WaitGroup, obj *JsonRPCConf, inside_method str
 
 	// check for no-goroutine recursive function
 	if len(params) != 2 {
-		<-o.threads.Routines
+		<-*threads
 	}
 	return nil
 }
@@ -644,10 +659,10 @@ func (o *NKNOVH) updateAN() error {
 	}
 
 	for i := range o.NodeInfo.ips {
-		r := &JsonRPCConf{Ip:o.NodeInfo.ips[i], Method:"getneighbor", Params: &json.RawMessage{'{','}'}, Timeout: time.Duration(o.conf.NeighborPoll.ConnTimeout)}
+		r := &JsonRPCConf{Ip:o.NodeInfo.ips[i], Method:"getneighbor", Params: &json.RawMessage{'{','}'}, Client: o.http.NeighborClient}
 		wg.Add(1)
-		o.threads.Routines <- struct{}{}
-		go o.getInfo(&wg, r, "AddNeighborAN")
+		o.threads.Neighbors <- struct{}{}
+		go o.getInfo(&wg, r, "AddNeighborAN", &o.threads.Neighbors)
 	}
 	wg.Wait()
 	o.log.Syslog("[NeighborPoll] All neighbors getted", "main")
@@ -657,10 +672,10 @@ func (o *NKNOVH) updateAN() error {
 	}
 
 	for i := range o.NodeInfo.ips {
-		r := &JsonRPCConf{Ip:o.NodeInfo.ips[i], Method:"getnodestate", Params: &json.RawMessage{'{','}'}, Timeout: time.Duration(o.conf.NeighborPoll.ConnTimeout)}
+		r := &JsonRPCConf{Ip:o.NodeInfo.ips[i], Method:"getnodestate", Params: &json.RawMessage{'{','}'}, Client: o.http.NeighborClient}
 		wg.Add(1)
-		o.threads.Routines <- struct{}{}
-		go o.getInfo(&wg, r, "UpdateNodeAN")
+		o.threads.Neighbors <- struct{}{}
+		go o.getInfo(&wg, r, "UpdateNodeAN", &o.threads.Neighbors)
 	}
 	wg.Wait()
 	o.NodeInfo.ips = make([]string, 0)
