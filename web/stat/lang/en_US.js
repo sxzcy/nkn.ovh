@@ -19,7 +19,10 @@ var LANG = {
 		road: "Roadmap",
 		changelog: "Changelog",
 		settings: "Settings",
-		logout: "Logout"
+		logout: "Logout",
+	},
+	donate: {
+		title: "Donate"
 	},
 	attention: {
 		text: "Note! Save the link below for access to your account, add this address into your bookmarks!",
@@ -98,6 +101,9 @@ var LANG = {
 		roadmap: {
 			title: "Roadmap"
 		},
+		donate: {
+			title: "Donate",
+		},
 		changelog: {
 			title: "Changelog"
 		},
@@ -149,7 +155,7 @@ var LANG = {
 			4: "Incorrect IP in your list",
 			5: "Incorrect delimiter (less than two IP found)",
 			6: "Node name is too long (more that 32 symbols)",
-			7: "You cannot add over 5000 nodes to your NKNC account"
+			7: "You cannot add over 5000 nodes to your account"
 		},
 		getmynodesstat: {
 			1: "A database error occurred",

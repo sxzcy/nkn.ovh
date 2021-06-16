@@ -41,7 +41,9 @@ CREATE TABLE `nodes` (
   `hash_id` int(10) UNSIGNED NOT NULL,
   `name` varchar(64) NOT NULL,
   `ip` varchar(20) NOT NULL,
-  `last_activity` datetime NOT NULL DEFAULT current_timestamp()
+  `created` datetime NOT NULL DEFAULT current_timestamp(),
+  `dirty` tinyint(1) NOT NULL DEFAULT 1,
+  `dirty_fcnt` int(10) UNSIGNED NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 CREATE TABLE `nodes_history` (
@@ -125,7 +127,9 @@ ALTER TABLE `daemon`
 
 ALTER TABLE `nodes`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `hash_id` (`hash_id`,`ip`);
+  ADD UNIQUE KEY `hash_id` (`hash_id`,`ip`),
+  ADD KEY `dirty` (`dirty`),
+  ADD KEY `dirty_fcnt` (`dirty_fcnt`);
 
 ALTER TABLE `nodes_history`
   ADD PRIMARY KEY (`id`),
@@ -203,5 +207,5 @@ ALTER TABLE `wallets`
 
 ALTER TABLE `watchers`
   ADD CONSTRAINT `watchers_ibfk_1` FOREIGN KEY (`hash_id`) REFERENCES `uniq` (`id`) ON DELETE CASCADE ON UPDATE NO ACTION;
-COMMIT;
+
 
