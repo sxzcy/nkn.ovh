@@ -5,7 +5,7 @@ ________
 
 ## System requirements.
 
-- High network bandwidth 100 mbps+. We are strongly recommend to use a server with 250+ mbps bandwidth for the default options.
+- High network bandwidth 100 mbps+. We strongly recommend to use a server with 250+ mbps bandwidth for the default settings.
 - As least 1 GB RAM
 - PHP 8.0.x
 - (Optional) Apache 2.2 or 2.4 with mod_rewrite and a php support module: mod_php, mod_lsapi or mod_fcgid. Also you can use nginx + php-fpm.
