@@ -21,7 +21,7 @@ ________
 ```
 git clone https://github.com/bytestostring/nkn.ovh.git
 cd nkn.ovh
-go build cmd/cmd/nknovh.go
+go build cmd/nknovh/nknovh.go
 ```
 2. Create a database and import the sql file like this:
 
