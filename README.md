@@ -46,6 +46,7 @@ cp web/engine/db_config.php.example web/engine/db_config.php
 ```
 mv web/* /srv/www/%domain%/
 ```
+(or provide your docroot path to the web directory in Apache/Nginx)
 
 If you use NGINX, you must disallow the access to **logs** directory manually, it is important for security reason.
 
