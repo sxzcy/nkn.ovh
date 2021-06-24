@@ -6,14 +6,12 @@ import (
 	 "strconv"
 	 "encoding/json"
 	 "sync"
-	// "fmt"
 	 "regexp"
 	 "strings"
 	 "reflect"
 	 "net/http"
 	 "runtime"
 	 "sort"
-	 "log"
 	 "errors"
 	 )
 
@@ -146,22 +144,22 @@ func (o *NKNOVH) Run() error {
 		select {
 		case msg1 := <-ch[0]:
 			if msg1 == false {
-				log.Fatal("neighborPoll exited")
+				return errors.New("Neighbors Poll has ended")
 			}
 		break
 		case msg1 := <-ch[1]:
 			if msg1 == false {
-				log.Fatal("mainPoll exited")
+				return errors.New("Main Poll has ended")
 			}
 		break
 		case msg1 := <-ch[2]:
 			if msg1 == false {
-				log.Fatal("walletPoll exited")
+				return errors.New("Wallet Poll has ended")
 			}
 		break
 		case msg1 := <-ch[3]:
 			if msg1 == false {
-				log.Fatal("dirtyPoll exited")
+				return errors.New("Dirty Poll has ended")
 			}
 		break
 		}
@@ -822,15 +820,15 @@ func (o *NKNOVH) searchIP(ip string) (int, error) {
 	ip_split = strings.Split(ip, ".")
 		if len(ip_split) < 1 {
 			o.log.Syslog("IP is not splitted", "main")
-			return 1, createErr("IP is not splitted")
+			return 1, errors.New("IP is not splitted")
 		}
 		if i_first, err = strconv.Atoi(ip_split[0]); err != nil {
 			o.log.Syslog("Cannot ParseInt ip_split[0]", "main")
-			return 1, createErr("Cannot ParseInt ip_split[0]")
+			return 1, errors.New("Cannot ParseInt ip_split[0]")
 		}
 		if i_second, err = strconv.Atoi(ip_split[1]); err != nil {
 			o.log.Syslog("Cannot ParseInt ip_split[1]", "main")
-			return 1, createErr("Cannot ParseInt ip_split[1]")
+			return 1, errors.New("Cannot ParseInt ip_split[1]")
 		}
 	ip2int = IP4toInt(ip)
 	
