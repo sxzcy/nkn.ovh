@@ -741,7 +741,7 @@ function parseNodes() {
 				CLIENT.nodes[key]['Height'] = -1
 				CLIENT.nodes[key]['ProposalSubmitted'] = -1
 				CLIENT.nodes[key]['Uptime'] = -1
-				let node = `<div class="tr ${cl}" id="Node-${key}"><div class="td"><input type="checkbox" id="controlNode-${item.node_id}" name="controlNode-${item.node_id}" value="${item.node_id}"></div><div class="td">${item.name}</div><div class="td">${item.ip}</div><div class="td">${status}</div><div class="td">N/A</div><div class="td">N/A</div><div class="td">N/A</div><div class="td">N/A</div><div class="td">N/A</div><div class="td">N/A</div><div class="td">N/A</div><div class="td">N/A</div><div class="td">${latest_update}</div></div>`;
+				let node = `<div class="tr ${cl}" id="Node-${key}"><div class="td"><input type="checkbox" id="controlNode-${item.node_id}" name="controlNode-${item.node_id}" value="${item.node_id}"></div><div class="td">${item.name}</div><div class="td">${item.ip}</div><div class="td">${status}</div><div class="td">N/A</div><div class="td">N/A</div><div class="td">N/A</div><div class="td">N/A</div><div class="td">N/A</div><div class="td">N/A</div><div class="td">N/A</div><div class="td">${latest_update}</div></div>`;
 				$('#nodes_table').append(node)
 			}
 		}
