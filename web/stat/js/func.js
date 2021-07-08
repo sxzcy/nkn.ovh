@@ -504,7 +504,7 @@ function rmnodes() {
 				return
 			} else if (data.Code == 0) {
 				$("#nodes_table input:checkbox:checked").each(function(i, el) {
-	    			gi$('#Node-' + $(el).val()).remove()
+	    			$('#Node-' + $(el).val()).remove()
 	    		})
 				$('#control-all').prop('checked', '')
 				getmynodesstat()
