@@ -482,19 +482,20 @@ function genId(el) {
 	})
 }
 function rmnodes() {
-	if ($("#nodes_table input:checkbox:checked").length > 0) {
-		var data = {};
-		var tmp_arr = [];
-    	$("#nodes_table input:checkbox:checked").each(function(i, el) {
-    		var tmp = $(el).val()
-    		if ($.isNumeric(tmp)) {
-    			tmp_arr[i] = tmp
-    		}
-    	})
-    	if (tmp_arr.length > 0) {
-    		var ids = Object.assign({}, tmp_arr);
-    	}
+	if ($("#nodes_table input:checkbox:checked").length < 1) {
+		return
 	}
+	var data = {};
+	var tmp_arr = [];
+	$("#nodes_table input:checkbox:checked").each(function(i, el) {
+		var tmp = $(el).val()
+		if ($.isNumeric(tmp)) {
+			tmp_arr[i] = tmp
+		}
+	})
+    if (tmp_arr.length > 0) {
+    	var ids = Object.assign({}, tmp_arr);
+    }
 	datax = {ids:ids};
 	api_query("rmnodes", true, "post", datax,
 		function(data) {
@@ -502,6 +503,9 @@ function rmnodes() {
 				genErr(LANG.answers.rmnodes[data.Code])
 				return
 			} else if (data.Code == 0) {
+				$("#nodes_table input:checkbox:checked").each(function(i, el) {
+	    			$('#Node-' + $(el).val()).remove()
+	    		})
 				$('#control-all').prop('checked', '')
 				getmynodesstat()
 				calcNodesInfo()
@@ -577,6 +581,7 @@ function sort_nodes(id, type = null) {
 function sortedBy() {
 	keys = [];
 	var m = new Map();
+	$('#nodes_table').children('#Node-')
 	if (CLIENT.sort == "t_ip") {
 		for (const [key, value] of Object.entries(CLIENT.nodes)) {
 			keys.push(value.ip)
@@ -601,6 +606,7 @@ function sortedBy() {
 			sorting.push(CLIENT.nodes[id])
 		})
 		CLIENT.nodes = sorting
+
 	} else if (CLIENT.sort == "t_name") {
 		if (CLIENT.sort_type == "ASC") {
 			CLIENT.nodes.sort(function(a,b) {return (b.name > a.name) ? 1 : ((a.name > b.name) ? -1 : 0);} )
@@ -671,6 +677,7 @@ function clearNodesTable() {
 		}
 	})
 }
+
 function parseNodes() {
 	var sumUptime = 0
 	var sumRelaysPerHour = 0
@@ -683,7 +690,7 @@ function parseNodes() {
 	var sumNodes = 0
 	var sumActiveNodes = 0
 	var RelaysViewK = 0
-	clearNodesTable();
+	//clearNodesTable()
 	$.each(CLIENT.nodes, function(key, item) {
 		if (item.SyncState != "PERSIST_FINISHED") {
 			var cl = "warning"
@@ -725,8 +732,30 @@ function parseNodes() {
 			} else {
 				UptimeView = item.Uptime + " s"
 			}
-			let node = `<div class="tr ${cl}" id="Node-${item.node_id}"><div class="td"><input type="checkbox" id="controlNode-${item.node_id}" name="controlNode-${item.node_id}" value="${item.node_id}"></div><div class="td">${item.name}</div><div class="td">${item.ip}</div><div class="td">${item.SyncState}</div><div class="td">${item.ProposalSubmitted}</div><div class="td">${item.Height}</div><div class="td">${UptimeView}</div><div class="td">${RelaysViewK}k</div><div class="td">${Relays10ViewK}</div><div class="td">${Relays60ViewK}</div><div class="td">${VersionView}</div><div class="td">${latest_update}</div></div>`;
-			$('#nodes_table').append(node)
+			var nodediv = $('#Node-' + item.node_id)
+			var ncontent
+			if (nodediv.length > 0) {
+				if (nodediv.hasClass(cl) == false) {
+					nodediv.removeClass(nodediv.attr('class').split(' ')[1]).addClass(cl)
+				}
+				nodediv.children('.nodeName').text(item.name)
+				nodediv.children('.nodeIP').text(item.ip)
+				nodediv.children('.nodeSyncState').text(item.SyncState)
+				nodediv.children('.nodeProposal').text(item.ProposalSubmitted)
+				nodediv.children('.nodeHeight').text(item.Height)
+				nodediv.children('.nodeUptime').text(UptimeView)
+				nodediv.children('.nodeRelays').text(RelaysViewK)
+				nodediv.children('.nodeRelays10').text(Relays10ViewK)
+				nodediv.children('.nodeRelays60').text(Relays60ViewK)
+				nodediv.children('.nodeVersion').text(VersionView)
+				nodediv.children('.nodeUpdated').text(latest_update)
+
+				ncontent = nodediv.detach()
+				$('#nodes_table').append(ncontent)
+			} else {
+				let node = `<div class="tr ${cl}" id="Node-${item.node_id}"><div class="td"><input type="checkbox" id="controlNode-${item.node_id}" name="controlNode-${item.node_id}" value="${item.node_id}"></div><div class="td nodeName">${item.name}</div><div class="td nodeIP">${item.ip}</div><div class="td nodeSyncState">${item.SyncState}</div><div class="td nodeProposal">${item.ProposalSubmitted}</div><div class="td nodeHeight">${item.Height}</div><div class="td nodeUptime">${UptimeView}</div><div class="td nodeRelays">${RelaysViewK}k</div><div class="td nodeRelays10">${Relays10ViewK}</div><div class="td nodeRelays60">${Relays60ViewK}</div><div class="td nodeVersion">${VersionView}</div><div class="td nodeUpdated">${latest_update}</div></div>`;
+				$('#nodes_table').append(node)
+			}
 		} else {
 			if (item.Err == 1) {
 				var status = "OFFLINE"
@@ -741,8 +770,29 @@ function parseNodes() {
 				CLIENT.nodes[key]['Height'] = -1
 				CLIENT.nodes[key]['ProposalSubmitted'] = -1
 				CLIENT.nodes[key]['Uptime'] = -1
-				let node = `<div class="tr ${cl}" id="Node-${key}"><div class="td"><input type="checkbox" id="controlNode-${item.node_id}" name="controlNode-${item.node_id}" value="${item.node_id}"></div><div class="td">${item.name}</div><div class="td">${item.ip}</div><div class="td">${status}</div><div class="td">N/A</div><div class="td">N/A</div><div class="td">N/A</div><div class="td">N/A</div><div class="td">N/A</div><div class="td">N/A</div><div class="td">N/A</div><div class="td">${latest_update}</div></div>`;
-				$('#nodes_table').append(node)
+				var nodediv = $('#Node-' + item.node_id)
+				var ncontent
+				if (nodediv.length > 0) {
+					if (nodediv.hasClass(cl) == false) {
+						nodediv.removeClass(nodediv.attr('class').split(' ')[1]).addClass(cl)
+					}
+					nodediv.children('.nodeName').text(item.name)
+					nodediv.children('.nodeIP').text(item.ip)
+					nodediv.children('.nodeSyncState').text(status)
+					nodediv.children('.nodeProposal').text("N/A")
+					nodediv.children('.nodeHeight').text("N/A")
+					nodediv.children('.nodeUptime').text("N/A")
+					nodediv.children('.nodeRelays').text("N/A")
+					nodediv.children('.nodeRelays10').text("N/A")
+					nodediv.children('.nodeRelays60').text("N/A")
+					nodediv.children('.nodeVersion').text("N/A")
+					nodediv.children('.nodeUpdated').text(latest_update)
+					ncontent = nodediv.detach()
+					$('#nodes_table').append(ncontent)
+				} else {
+					let node = `<div class="tr ${cl}" id="Node-${key}"><div class="td"><input type="checkbox" id="controlNode-${item.node_id}" name="controlNode-${item.node_id}" value="${item.node_id}"></div><div class="td nodeName">${item.name}</div><div class="td nodeIP">${item.ip}</div><div class="td nodeSyncState">${status}</div><div class="td nodeProposal">N/A</div><div class="td nodeHeight">N/A</div><div class="td nodeUptime">N/A</div><div class="td nodeRelays">N/A</div><div class="td nodeRelays10">N/A</div><div class="td nodeRelays60">N/A</div><div class="td nodeVersion">N/A</div><div class="td nodeUpdated">${latest_update}</div></div>`;
+					$('#nodes_table').append(node)
+				}
 			}
 		}
 	})

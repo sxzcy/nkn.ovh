@@ -67,16 +67,16 @@ type NodeNeighbor struct {
 		Addr               string `json:"addr"`
 		Height             int    `json:"height"`
 		ID                 string `json:"id"`
-	//	Isoutbound         bool   `json:"isOutbound"`
-	//	Jsonrpcport        int    `json:"jsonRpcPort"`
-	//	Protocolversion    int    `json:"protocolVersion"`
-	//	PublicKey          string `json:"publicKey"`
-	//	RoundTripTime      int    `json:"roundTripTime"`
+		Isoutbound         bool   `json:"isOutbound"`
+		Jsonrpcport        int    `json:"jsonRpcPort"`
+		Protocolversion    int    `json:"protocolVersion"`
+		PublicKey          string `json:"publicKey"`
+		RoundTripTime      int    `json:"roundTripTime"`
 		SyncState          string `json:"syncState"`
-	//	Tlsjsonrpcdomain   string `json:"tlsJsonRpcDomain"`
-	//	Tlsjsonrpcport     int    `json:"tlsJsonRpcPort"`
-	//	Tlswebsocketdomain string `json:"tlsWebsocketDomain"`
-	//	Tlswebsocketport   int    `json:"tlsWebsocketPort"`
-	//	Websocketport      int    `json:"websocketPort"`
+		Tlsjsonrpcdomain   string `json:"tlsJsonRpcDomain"`
+		Tlsjsonrpcport     int    `json:"tlsJsonRpcPort"`
+		Tlswebsocketdomain string `json:"tlsWebsocketDomain"`
+		Tlswebsocketport   int    `json:"tlsWebsocketPort"`
+		Websocketport      int    `json:"websocketPort"`
 	} `json: "result"`
 }
