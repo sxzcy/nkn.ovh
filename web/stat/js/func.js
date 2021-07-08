@@ -504,7 +504,7 @@ function rmnodes() {
 				return
 			} else if (data.Code == 0) {
 				$("#nodes_table input:checkbox:checked").each(function(i, el) {
-	    			$('#Node-' + $(el).val()).remove()
+	    			gi$('#Node-' + $(el).val()).remove()
 	    		})
 				$('#control-all').prop('checked', '')
 				getmynodesstat()
@@ -581,7 +581,6 @@ function sort_nodes(id, type = null) {
 function sortedBy() {
 	keys = [];
 	var m = new Map();
-	$('#nodes_table').children('#Node-')
 	if (CLIENT.sort == "t_ip") {
 		for (const [key, value] of Object.entries(CLIENT.nodes)) {
 			keys.push(value.ip)
