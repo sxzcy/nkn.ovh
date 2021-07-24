@@ -789,7 +789,7 @@ function parseNodes() {
 					ncontent = nodediv.detach()
 					$('#nodes_table').append(ncontent)
 				} else {
-					let node = `<div class="tr ${cl}" id="Node-${key}"><div class="td"><input type="checkbox" id="controlNode-${item.node_id}" name="controlNode-${item.node_id}" value="${item.node_id}"></div><div class="td nodeName">${item.name}</div><div class="td nodeIP">${item.ip}</div><div class="td nodeSyncState">${status}</div><div class="td nodeProposal">N/A</div><div class="td nodeHeight">N/A</div><div class="td nodeUptime">N/A</div><div class="td nodeRelays">N/A</div><div class="td nodeRelays10">N/A</div><div class="td nodeRelays60">N/A</div><div class="td nodeVersion">N/A</div><div class="td nodeUpdated">${latest_update}</div></div>`;
+					let node = `<div class="tr ${cl}" id="Node-${item.node_id}"><div class="td"><input type="checkbox" id="controlNode-${item.node_id}" name="controlNode-${item.node_id}" value="${item.node_id}"></div><div class="td nodeName">${item.name}</div><div class="td nodeIP">${item.ip}</div><div class="td nodeSyncState">${status}</div><div class="td nodeProposal">N/A</div><div class="td nodeHeight">N/A</div><div class="td nodeUptime">N/A</div><div class="td nodeRelays">N/A</div><div class="td nodeRelays10">N/A</div><div class="td nodeRelays60">N/A</div><div class="td nodeVersion">N/A</div><div class="td nodeUpdated">${latest_update}</div></div>`;
 					$('#nodes_table').append(node)
 				}
 			}
