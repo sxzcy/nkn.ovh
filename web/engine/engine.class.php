@@ -431,6 +431,8 @@ class Engine {
 
 			if ($row['SyncState'] == "OFFLINE") {
 				$nodes[$n]['Err'] = 1;
+				$nodes[$n]['RelaysPerHour10'] = -1;
+				$nodes[$n]['RelaysPerHour60'] = -1;
 				$nodes[$n]['SyncState'] = "_OFFLINE_";
 				$no_history_nodes[$n] = 1;
 				continue;
