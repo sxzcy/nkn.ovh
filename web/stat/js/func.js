@@ -706,7 +706,7 @@ function parseNodes() {
 			sumUptime += item.Uptime
 			sumProposal += item.ProposalSubmitted
 			sumRelaysPerHour += item.RelaysPerHour
-			RelaysViewK = (item.RelaysPerHour/1000).toFixed(2)
+			RelaysViewK = (item.RelaysPerHour/1000).toFixed(2) + "k"
 			if (item.RelaysPerHour10 > 0) {
 				sumRelaysPerHour10 += item.RelaysPerHour10
 				Relays10ViewK = (item.RelaysPerHour10/1000).toFixed(2) + "k"
