@@ -74,7 +74,7 @@
 		"Other": {
 		  "title": "你的节点信息",
 		  "no_nodes_label": "你没有任何节点",
-		  "col_name": "备注",
+		  "col_name": "名称",
 		  "col_ip": "IP 地址",
 		  "col_status": "状态",
 		  "col_proposal": "建议",
