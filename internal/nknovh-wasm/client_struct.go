@@ -30,6 +30,7 @@ type CLIENT struct {
 	W *xwasmapi.Xwasmapi
 	ws *js.Value
 	mux *Mutexes
+	PingPongStopCh chan bool
 	AutoUpdaterIsStarted bool
 	AutoUpdaterStartCh chan bool
 	AutoUpdaterStopCh chan bool
@@ -150,4 +151,49 @@ type GetFullstack struct {
 		Prices Prices `json: "Prices, omitempty"`
 		Daemon Daemon `json: "Daemon, omitempty"`
 	} `json:"Value, omitempty"`
+}
+
+type NodeLookup struct {
+	MinPing         int `json:"MinPing"`
+	AvgPing         int `json:"AvgPing"`
+	MaxPing         int `json:"MaxPing"`
+	NeighborCount   int `json:"NeighborCount"`
+	NeighborPersist int `json:"NeighborPersist"`
+	RelaysPerHour   int `json:"RelaysPerHour"`
+	NodeState NodeState `json:"NodeState"`
+}
+
+type RPCErrorState struct {
+	Code int `json:"code,omitempty"`
+	Data string `json:"data,omitempty"`
+	Message string `json:"message,omitempty"`
+	PublicKey string `json:"publicKey,omitempty"`
+	WalletAddress string `json:"walletAddress,omitempty"`
+}
+
+
+type NodeState struct {
+	Id      string `json:"id"`
+	Jsonrpc string `json:"jsonrpc"`
+	Error *RPCErrorState `json:"error,omitempty"`
+	Result  struct {
+		Addr               string `json:"addr"`
+		Currtimestamp      int    `json:"currTimeStamp"`
+		Height             int    `json:"height"`
+		ID                 string `json:"id"`
+		Jsonrpcport        int    `json:"jsonRpcPort"`
+		LedgerMode         string `json:"ledgerMode"`
+		ProposalSubmitted  int    `json:"proposalSubmitted"`
+		ProtocolVersion    int    `json:"protocolVersion"`
+		PublicKey          string `json:"publicKey"`
+		RelayMessageCount  uint64 `json:"relayMessageCount"`
+		SyncState          string `json:"syncState"`
+		Tlsjsonrpcdomain   string `json:"tlsJsonRpcDomain"`
+		Tlsjsonrpcport     int    `json:"tlsJsonRpcPort"`
+		Tlswebsocketdomain string `json:"tlsWebsocketDomain"`
+		Tlswebsocketport   int    `json:"tlsWebsocketPort"`
+		Uptime             int    `json:"uptime"`
+		Version            string `json:"version"`
+		Websocketport      int    `json:"websocketPort"`
+	} `json:"result"`
 }

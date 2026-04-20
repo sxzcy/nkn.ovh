@@ -1,6 +1,5 @@
 !.gitignore
-*.json
-/go.sum
+/*.json
 /nknovh
 /test.go
 /test

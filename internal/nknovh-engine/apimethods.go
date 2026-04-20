@@ -12,6 +12,7 @@ import (
 		"io/ioutil"
 		"fmt"
 		"time"
+		"encoding/json"
 )
 
 func (o *NKNOVH) updateUniqWatch(c *CLIENT) error {
@@ -26,15 +27,206 @@ func (o *NKNOVH) updateUniqWatch(c *CLIENT) error {
 	return nil
 }
 
-func (o *NKNOVH) WsError(q *WSQuery, code int) (err error, r WSReply) {
+func (o *NKNOVH) WsError(q *WSQuery, code int, cb_value ...bool) (err error, r WSReply) {
 	var ok bool
 	if r, ok = o.Web.Response[code]; ok {
 		r.Method = q.Method
 		err = errors.New(r.ErrMessage)
+		if len(cb_value) > 0 {
+			r.Value = q.Value
+		}
 		return
 	}
 	err = errors.New("Response key is not found")
 	return nil, WSReply{Method: q.Method, Code: -1, Error: true, ErrMessage: "Response key is not found"}
+}
+
+
+func (o *NKNOVH) WsSendByHashId(r *WSReply, hashId int) error {
+	o.Web.WsPool.mu.RLock()
+	defer o.Web.WsPool.mu.RUnlock()
+	if _, ok := o.Web.WsPool.Clients[hashId]; !ok {
+		return nil
+	}
+	o.Web.WsPool.Clients[hashId].mu.RLock()
+	defer o.Web.WsPool.Clients[hashId].mu.RUnlock()
+	for connId, _ := range o.Web.WsPool.Clients[hashId].list {
+		c := o.Web.WsPool.Clients[hashId].list[connId]
+		if c.WsConnection == nil {
+			continue
+		}
+		if err := o.WriteJsonWs(r, c); err != nil {
+			o.log.Syslog(err.Error(), "wshttp")
+		}
+	}
+	return nil
+}
+
+func (o *NKNOVH) apiGetNodeIpByPublicKey(q *WSQuery, c *CLIENT) (err error, r WSReply) {
+	var raw_pubkey string
+	var ok bool
+	if raw_pubkey, ok = q.Value["PublicKey"].(string); !ok {
+		o.WsError(q, 25)
+	}
+	if len(raw_pubkey) != 64 {
+		return o.WsError(q, 26)
+	}
+	o.NodeInfo.ANLastMux.RLock()
+	defer o.NodeInfo.ANLastMux.RUnlock()
+	rows, err := o.sql.stmt["main"]["WebSelectNodeIpByPublicKeyAN"].Query(raw_pubkey)
+	if err != nil {
+		return o.WsError(q, 1)
+	}
+	defer rows.Close()
+
+	var dbip string
+	db_ips := make([]string, 0)
+	for rows.Next() {
+		if err = rows.Scan(&dbip); err != nil {
+			return o.WsError(q, 1)
+		}
+		db_ips = append(db_ips, dbip)
+	}
+	if len(db_ips) == 0 {
+		return o.WsError(q, 3)
+	}
+
+	m := map[string]interface{}{}
+	m["IpList"] = db_ips
+
+	return nil, WSReply{Method: q.Method, Code: 0, Value: m,}
+}
+
+func (o *NKNOVH) apiGetNodeDetails(q *WSQuery, c *CLIENT) (err error, r WSReply) {
+
+	t0 := time.Now()
+	var node_id int
+	if raw_node_id, ok := q.Value["NodeId"].(float64); !ok {
+		if raw_node_id_s, ok := q.Value["NodeId"].(string); !ok {
+			return o.WsError(q, 19, true)
+		} else {
+			x, err := strconv.Atoi(raw_node_id_s)
+			if err != nil {
+				return o.WsError(q, 19, true)
+			}
+			node_id = x
+		}
+	} else {
+		node_id = int(raw_node_id)
+	}
+
+	var node_ip string
+	var node_name string
+	row := o.sql.stmt["main"]["WebSelectNodeInfoById+HashId"].QueryRow(node_id, c.HashId)
+	err = row.Scan(&node_name, &node_ip)
+	switch {
+		case err == sql.ErrNoRows:
+			return o.WsError(q, 18, true)
+		case err != nil:
+			return o.WsError(q, 1, true)
+	}
+	var data NodeSt
+	state := &JsonRPCConf{Ip:node_ip, Method:"getnodestate", Params: &json.RawMessage{'{','}'}, Client: o.http.MainClient, UnmarshalData: &data.State}
+
+	t1 := time.Now()
+	res, err := o.jrpc_get(state)
+	t1_time := time.Now().Sub(t1)
+	if err != nil && len(res) == 0 {
+		return o.WsError(q, 20, true)
+	}
+	if err != nil && len(res) > 0 {
+		return o.WsError(q, 21, true)
+	}
+
+	m := map[string]interface{}{}
+
+	if data.State.Error != nil {
+		r := o.respErrorHandling(data.State.Error)
+		m["NodeError"] = r
+		m["NodeId"] = node_id
+		return nil, WSReply{Method: q.Method, Code: 29, Value: m,}
+	}
+
+	if b := o.Validator.IsNodeStateValid(&data.State); !b {
+		return o.WsError(q, 30, true)
+	}
+
+
+	neighbor := &JsonRPCConf{Ip:node_ip, Method:"getneighbor", Params: &json.RawMessage{'{','}'}, Client: o.http.MainClient, UnmarshalData: &data.Neighbor}
+
+	t2 := time.Now()
+	res, err = o.jrpc_get(neighbor)
+	t2_time := time.Now().Sub(t2)
+
+	if err != nil && len(res) == 0 {
+		return o.WsError(q, 22, true)
+	}
+	if err != nil && len(res) > 0 {
+		return o.WsError(q, 23, true)
+	}
+
+	if data.Neighbor.Error != nil {
+		return o.WsError(q, 24, true)
+	}
+
+	type NodeStats struct {
+		MinPing int
+		AvgPing int
+		MaxPing int
+		NeighborCount int
+		NeighborPersist int
+		RelaysPerHour uint64
+		NodeState *NodeState
+	}
+
+	ns := new(NodeStats)
+	if data.State.Result.Uptime > 0 {
+		ns.RelaysPerHour = uint64(math.Floor(float64(data.State.Result.RelayMessageCount)/float64(data.State.Result.Uptime)*3600))
+	} else {
+		ns.RelaysPerHour = 0
+	}
+	ns.NodeState = &data.State
+
+	//Get the neighbors info
+	ncount := len(data.Neighbor.Result)
+	if ncount != 0 {
+		var min int = -1
+		var max int = -1
+		var sumping int
+		var sumpersist int
+		for i := 0; i < ncount; i++ {
+			if min == -1 || max == -1 {
+				min = data.Neighbor.Result[i].RoundTripTime
+				max = data.Neighbor.Result[i].RoundTripTime
+			}
+			if data.Neighbor.Result[i].RoundTripTime > max {
+				max = data.Neighbor.Result[i].RoundTripTime
+			}
+			if data.Neighbor.Result[i].RoundTripTime < min {
+				min = data.Neighbor.Result[i].RoundTripTime
+			}
+
+			sumping += data.Neighbor.Result[i].RoundTripTime
+			if data.Neighbor.Result[i].SyncState == "PERSIST_FINISHED" {
+				sumpersist++
+			}
+		}
+		ns.AvgPing = int(math.Round(float64(sumping)/float64(ncount)))
+		ns.MaxPing = max
+		ns.MinPing = min
+		ns.NeighborCount = ncount
+		ns.NeighborPersist = sumpersist
+	}
+	m["NodeId"] = node_id
+	m["NodeStats"] = ns
+	t0_time := time.Now().Sub(t0)
+	m["DebugInfo"] = map[string]interface{}{
+			"GetnodestateTime": t1_time.String(),
+			"GetneighborTime": t2_time.String(),
+			"HandlingTime": t0_time.String(),
+	}
+
+	return nil, WSReply{Method: q.Method, Code: 0, Value: m,}
 }
 
 func (o *NKNOVH) apiSaveSettings(q *WSQuery, c *CLIENT) (err error, r WSReply) {
@@ -88,8 +280,8 @@ func (o *NKNOVH) apiSaveSettings(q *WSQuery, c *CLIENT) (err error, r WSReply) {
 				return o.WsError(q, 1)
 			}
 		} else {
-			db_wallets := make([]string, 0, 3)
-			db_wallets_id := make([]int, 0, 3)
+			db_wallets := make([]string, 0, wallets_limit)
+			db_wallets_id := make([]int, 0, wallets_limit)
 			rows, err := o.sql.stmt["main"]["WebGetMyWallets"].Query(c.HashId)
 			if err != nil {
 				return o.WsError(q, 1)
@@ -141,6 +333,92 @@ func (o *NKNOVH) apiSaveSettings(q *WSQuery, c *CLIENT) (err error, r WSReply) {
 	return nil, WSReply{Method: q.Method, Code: 0, Value: m,}
 }
 
+func (o *NKNOVH) apiRmNodesByIp(q *WSQuery, c *CLIENT) (err error, r WSReply) {
+	var nodes []string
+	var ok bool
+	var nodes_s string
+	var nodes_s_ok bool
+	var raw_nodes_s []string
+	raw_nodes := make([]interface{}, 0)
+	if raw_nodes, ok = q.Value["NodesIp"].([]interface{}); !ok {
+		if nodes_s, ok = q.Value["NodesIp"].(string); !ok {
+			return o.WsError(q, 27)
+		}
+		raw_nodes_s = strings.Split(nodes_s, ",")
+		nodes_s_ok = true
+	}
+
+	var raw_node string
+	if !nodes_s_ok {
+		for i, _ := range raw_nodes {
+			if raw_node, ok = raw_nodes[i].(string); !ok {
+				return o.WsError(q, 27)
+			}
+			raw_node  = strings.TrimSpace(raw_node)
+			if ok = o.Validator.IsIPv4Valid(raw_node); !ok {
+				return o.WsError(q, 27)
+			}
+			nodes = append(nodes, raw_node)
+		}
+	} else {
+		for i, _ := range raw_nodes_s {
+			raw_node = strings.TrimSpace(raw_nodes_s[i])
+			if ok = o.Validator.IsIPv4Valid(raw_node); !ok {
+				return o.WsError(q, 27)
+			}
+			nodes = append(nodes, raw_node)
+		}
+	}
+
+	if len(nodes) < 1 {
+		return o.WsError(q, 27)
+	}
+
+	tx, err := o.sql.db["main"].Begin()
+	if err != nil {
+		o.log.Syslog("Cannot create new Tx: " + err.Error(), "sql")
+		return o.WsError(q, 1)
+	}
+	defer tx.Rollback()
+	var row_id uint64
+	rows_id := make([]uint64, 0, len(nodes))
+	for i,_ := range nodes {
+		row := o.sql.stmt["main"]["WebGetNodeIdByIp"].QueryRow(c.HashId, nodes[i])
+		err := row.Scan(&row_id)
+		switch {
+			case err == sql.ErrNoRows:
+				return o.WsError(q, 28)
+			case err != nil:
+				return o.WsError(q, 1)
+			default:
+				rows_id = append(rows_id, row_id)
+				res, err := tx.Stmt(o.sql.stmt["main"]["WebRmNodes"]).Exec(c.HashId, row_id)
+				if err != nil {
+					o.log.Syslog("Cannot execute Tx stmt query: " + err.Error(), "sql")
+					return o.WsError(q, 1)
+				}
+				if rows_affected, err := res.RowsAffected(); rows_affected == 0 && err == nil {
+					o.log.Syslog("No rows affected by removing node", "sql")
+					return o.WsError(q, 28)
+				} else if err != nil {
+					o.log.Syslog("Cannot get RowsAffected: " + err.Error(), "sql")
+					return o.WsError(q, 1)
+				}
+		}
+
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		o.log.Syslog("Cannot Commit Tx Query: " + err.Error(), "sql")
+		return o.WsError(q, 1)
+	}
+
+	m := map[string]interface{}{}
+	m["Data"] = "Nodes removed successfully"
+	m["NodesId"] = rows_id
+	return nil, WSReply{Method: q.Method, Code: 0, Value: m, }
+}
 
 func (o *NKNOVH) apiRmNodes(q *WSQuery, c *CLIENT) (err error, r WSReply) {
 	var nodes []int
@@ -148,19 +426,18 @@ func (o *NKNOVH) apiRmNodes(q *WSQuery, c *CLIENT) (err error, r WSReply) {
 	var node_id int
 	var raw_node float64
 	raw_nodes := make([]interface{}, 0)
-
+	var node_id_string string
 	if raw_nodes, ok = q.Value["NodesId"].([]interface{}); !ok {
-		if node_id_string, ok := q.Value["NodesId"].(string); !ok {
+		if node_id_string, ok = q.Value["NodesId"].(string); !ok {
 			return o.WsError(q, 15)
-		} else {
-			raw_nodes_s := strings.Split(node_id_string, ",")
-			for i, _ := range raw_nodes_s {
-				x, err := strconv.Atoi(strings.TrimSpace(raw_nodes_s[i]))
-				if err != nil {
-					return o.WsError(q, 15)
-				}
-				raw_nodes = append(raw_nodes, x)
+		}
+		raw_nodes_s := strings.Split(node_id_string, ",")
+		for i, _ := range raw_nodes_s {
+			x, err := strconv.Atoi(strings.TrimSpace(raw_nodes_s[i]))
+			if err != nil {
+				return o.WsError(q, 15)
 			}
+			raw_nodes = append(raw_nodes, x)
 		}
 	}
 	for i, _ := range raw_nodes {
@@ -340,8 +617,24 @@ func (o *NKNOVH) apiAddNodes(q *WSQuery, c *CLIENT) (err error, r WSReply) {
 
 	//Multiple
 	tmp_ip = strings.TrimSpace(tmp_ip)
+	multiple_ipname := map[string]string{}
+
 	if ok = strings.Contains(tmp_ip, ","); ok {
-		ips.Multi = strings.Split(tmp_ip, ",")
+		// Check for the style: 0.0.0.0, NodeName
+		if ok = strings.Contains(tmp_ip, "\n"); ok {
+			re := regexp.MustCompile(`(?m)^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3})( *),( *)([A-Za-z0-9-_]+)( *)$`)
+			if ok = re.MatchString(tmp_ip); ok {
+				raw_nodes_ipname := re.FindAllStringSubmatch(tmp_ip, -1)
+				for i, _ := range raw_nodes_ipname {
+					multiple_ipname[raw_nodes_ipname[i][1]] = raw_nodes_ipname[i][7]
+					ips.Multi = append(ips.Multi, raw_nodes_ipname[i][1])
+				}
+			} else {
+				ips.Multi = strings.Split(tmp_ip, ",")
+			}
+		} else {
+			ips.Multi = strings.Split(tmp_ip, ",")
+		}
 	} else if ok = strings.Contains(tmp_ip, "\n"); ok {
 		ips.Multi = strings.Split(tmp_ip, "\n")
 	} else if ok = strings.Contains(tmp_ip, " "); ok {
@@ -386,9 +679,16 @@ func (o *NKNOVH) apiAddNodes(q *WSQuery, c *CLIENT) (err error, r WSReply) {
 	defer tx.Rollback()
 	var partially bool
 	var cnt_nodes_added int = 0
+	var mipname bool = len(multiple_ipname) > 0
+	var clearprefix string
 	for i,_ := range ips.MultiIP {
-		clearprefix := fmt.Sprintf("%s%d", prefix, nodes_count+i)
-		if err, status := InsertNode(c.HashId, clearprefix, ips.MultiIP[i].String(), tx); err != nil {
+		ipstring := ips.MultiIP[i].String()
+		if mipname {
+			clearprefix = multiple_ipname[ipstring]
+		} else {
+			clearprefix = fmt.Sprintf("%s%d", prefix, nodes_count+i)
+		}
+		if err, status := InsertNode(c.HashId, clearprefix, ipstring, tx); err != nil {
 			o.log.Syslog("InsertNode returned err:" + err.Error(), "sql")
 			return o.WsError(q, 1)
 		} else {
@@ -445,16 +745,25 @@ func (o *NKNOVH) apiGenId(q *WSQuery, c *CLIENT) (err error, r WSReply) {
 	return
 }
 
+// WebSocket only
+
+func (o *NKNOVH) apiLogout(q *WSQuery, c *CLIENT) (err error, r WSReply) {
+	r = WSReply{Method: q.Method, Code: 0,}
+	if c.NotWs {
+		return
+	}
+	o.WsClientUpdate(c, -1)
+	return
+}
+
+// WebSocket only
+
 func (o *NKNOVH) apiAuth(q *WSQuery, c *CLIENT) (err error, r WSReply) {
 	var hash string
 	var ok bool
 	hash, ok = q.Value["Hash"].(string)
 	if !ok {
-		//DEPRECATED AND WILL BE REMOVED
-		hash, ok = q.Value["hash"].(string)
-		if !ok {
-			return o.WsError(q, 5)
-		}
+		return o.WsError(q, 5)
 	}
 
 	if len(hash) != 64 {
@@ -472,7 +781,13 @@ func (o *NKNOVH) apiAuth(q *WSQuery, c *CLIENT) (err error, r WSReply) {
 			return o.WsError(q, 1)
 		break
 		}
-	c.HashId = id
+
+	if c.NotWs {
+		c.HashId = id
+	} else {
+		o.WsClientUpdate(c, id)
+	}
+	
 	value := map[string]interface{}{}
 	value["Hash"] = hash
 	return err, WSReply{Method: q.Method, Code: 0, Value: value,}
@@ -507,7 +822,7 @@ func (o *NKNOVH) apiFullstack(q *WSQuery, c *CLIENT) (err error, r WSReply) {
 }
 
 func (o *NKNOVH) apiLanguage(q *WSQuery, c *CLIENT) (err error, r WSReply) {
-	lang_packages := []string{"en_US", "ru_RU"}
+	lang_packages := []string{"en_US", "ru_RU", "zn_CN"}
 	var locale string
 	var view string
 	var ok bool
@@ -684,6 +999,7 @@ func (o *NKNOVH) apiMyNodes(q *WSQuery, c *CLIENT) (err error, r WSReply) {
 		o.log.Syslog("Can't Prepare sqlHistory: "+errx.Error(), "sql")
 		return o.WsError(q, 1)
 	}
+	defer stmt.Close()
 	norows = true
 	rows3, errx := stmt.Query(inSx...)
 	if errx != nil {

@@ -60,6 +60,13 @@ func (c *CLIENT) apiGenId(data *WSReply) interface{} {
 	return true
 }
 
+func (c *CLIENT) apiOther(data *WSReply) interface{} {
+	if data.Code == 1002 {
+		js.Global().Call("alert", "WebSocket connections limit is reached.\nClose the other windows of the site and try again.")
+	}
+	return true
+}
+
 func (c *CLIENT) apiAuth(data *WSReply) interface{} {
 	if data.Error  {
 		if c.Hash != "" {
@@ -112,6 +119,129 @@ func (c *CLIENT) apiFullstack(data *WSReply) interface{} {
 	c.ParseFullstack(fstack)
 	return true
 }
+
+func (c *CLIENT) apiLogout(data *WSReply) interface{} {
+	if err, _ := c.W.LocalStorage("clear"); err != nil {
+		s := err.Error()
+		c.GenErr(s, "default", -1)
+		return s
+	}
+	c.mux.AutoUpdater.Lock()
+	if c.AutoUpdaterIsStarted {
+		c.AutoUpdaterStopCh <- true
+	}
+	c.mux.AutoUpdater.Unlock()
+	c.mux.StartView.Lock()
+	defer c.mux.StartView.Unlock()
+	history := js.Global().Get("history")
+	history.Call("pushState", nil, nil, "/")
+	c.NodesSummary = map[string]map[string]float64{}
+	c.Version = ""
+	c.Nodes = nil
+	c.Netstatus = nil
+	c.Daemon = nil
+	c.Wallets = nil
+	c.Prices = nil
+	go c.Run()
+	return nil
+}
+
+func (c *CLIENT) apiGetNodeDetails(data *WSReply) interface{} {
+	doc := js.Global().Get("document")
+
+	var nodeid int
+	if x, ok := data.Value["NodeId"].(float64); !ok {
+		fmt.Println("nodeid is not float64")
+		return false
+	} else {
+		nodeid = int(x)
+	}
+	sid := strconv.Itoa(nodeid)
+	nodeerr := "nodeLookupErr-" + sid
+	nodeload := "nodeLookupLoading-" +sid
+	nodeinfo := "nodeLookupInfo-" +sid
+
+	infodiv := doc.Call("getElementById", nodeinfo)
+	if !infodiv.Truthy() {
+		fmt.Println(nodeinfo+ " is not found")
+		return false
+	}
+
+	if data.Error {
+		c.GenErr(data.ErrMessage, "default", data.Code, nodeerr)
+		c.W.HideById(nodeload)
+		c.W.ShowById(nodeerr)
+		return false
+	}
+	switch data.Code {
+	case 0:
+		lookup := new(NodeLookup)
+		b, _ := json.Marshal(data.Value["NodeStats"])
+		err := json.Unmarshal(b, lookup)
+		if err != nil {
+			c.GenErr("The error occured while decoding:" + err.Error(), "default", -1, nodeerr)
+			c.W.HideById(nodeload)
+			c.W.ShowById(nodeerr)
+			return false
+		}
+
+		s := &lookup.NodeState.Result
+		neC := lookup.NeighborCount
+		neP := lookup.NeighborPersist
+		nePP := float64(neP) / (float64(neC) / 100)
+		neCP := float64(100) - nePP
+		neOff := neC - neP
+
+		nodelook_html := js.Global().Get("nodelookup_view")
+		if !nodelook_html.Truthy() {
+			fmt.Println("nodelookup_view is not found")
+			return false
+		}
+		infodiv.Set("innerHTML", fmt.Sprintf(nodelook_html.String(), s.Addr, s.Currtimestamp, s.Height, s.ID, s.Jsonrpcport, s.ProposalSubmitted, s.ProtocolVersion, s.PublicKey, s.RelayMessageCount, s.SyncState, s.Tlsjsonrpcdomain, s.Tlsjsonrpcport, s.Tlswebsocketdomain, s.Tlswebsocketport, s.Uptime, s.Version, s.Websocketport, neCP, nePP, neOff, neP, lookup.MinPing, lookup.AvgPing, lookup.MaxPing, neC, s.LedgerMode))
+		c.W.HideById(nodeload)
+		c.W.ShowById(nodeinfo)
+		return true
+	case 29:
+		lookup := new(RPCErrorState)
+		b, _ := json.Marshal(data.Value["NodeError"])
+		err := json.Unmarshal(b, lookup)
+		if err != nil {
+			c.GenErr("The error occured while decoding:" + err.Error(), "default", -1, nodeerr)
+			c.W.HideById(nodeload)
+			c.W.ShowById(nodeerr)
+			return false
+		}
+		switch lookup.Code {
+		case -45022:
+			desc := "No ID in this account, waiting for generate ID fee or generate ID transaction"
+			genid_html := js.Global().Get("nodelookup_genid")
+			if !genid_html.Truthy() {
+				fmt.Println("nodelookup_genid is not Truthy")
+				return false
+			}
+			infodiv.Set("innerHTML", fmt.Sprintf(genid_html.String(), desc, lookup.WalletAddress, lookup.PublicKey))
+		case -45024:
+			desc := "The node compacts its database"
+			prundb_html := js.Global().Get("nodelookup_pruning")
+			if !prundb_html.Truthy() {
+				fmt.Println("nodelookup_pruning is not Truthy")
+				return false
+			}
+			infodiv.Set("innerHTML", fmt.Sprintf(prundb_html.String(), desc))
+		default:
+			desc := "Got unknown response code: " + strconv.Itoa(lookup.Code)
+			default_html := js.Global().Get("nodelookup_default")
+			if !default_html.Truthy() {
+				fmt.Println("nodelookup_default is not Truthy")
+				return false
+			}
+			infodiv.Set("innerHTML", fmt.Sprintf(default_html.String(), desc))
+		}
+		c.W.HideById(nodeload)
+		c.W.ShowById(nodeinfo)
+	}
+	return true
+} 
 
 func (c *CLIENT) apiAddNodes(data *WSReply) interface{} {
 	doc := js.Global().Get("document")

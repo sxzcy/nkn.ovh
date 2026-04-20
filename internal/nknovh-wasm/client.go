@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"strings"
 	"strconv"
+	"github.com/fvbommel/sortorder"
 )
 
 	//Some html templates
@@ -26,10 +27,11 @@ import (
 	<p><a href="https://explorer.nkn.org/detail/address/%[5]v" rel="noreferrer" target="_blank" title="Explorer">%[5]v</a></p>
 	<p>%[6]s</p>
 	</div>`
-	var node_template string = `<div class="td"><input type="checkbox" id="controlNode-%[1]v" name="controlNode-%[1]v" value="%[1]v"></div><div class="td nodeName">%[2]v</div><div class="td nodeIP">%[3]v</div><div class="td nodeSyncState">%[4]v</div><div class="td nodeProposal">%[5]v</div><div class="td nodeHeight">%[6]v</div><div class="td nodeUptime">%[7]v</div><div class="td nodeRelays">%[8]v</div><div class="td nodeRelays10">%[9]v</div><div class="td nodeRelays60">%[10]v</div><div class="td nodeVersion">%[11]v</div><div class="td nodeUpdated">%[12]v</div>`
+	var node_template string = `<div class="td"><input type="checkbox" id="controlNode-%[1]v" name="controlNode-%[1]v" value="%[1]v"></div><div class="td nodeName">%[2]v</div><div class="td op"><a href="javascript:void(0)" onclick="checkOnline(%[1]v)" title="Check the node online"><img src="/static/images/lookup.png" alt="Check the node online"></a></div><div class="td nodeIP">%[3]v</div><div class="td nodeSyncState">%[4]v</div><div class="td nodeProposal">%[5]v</div><div class="td nodeHeight">%[6]v</div><div class="td nodeUptime">%[7]v</div><div class="td nodeRelays">%[8]v</div><div class="td nodeRelays10">%[9]v</div><div class="td nodeRelays60">%[10]v</div><div class="td nodeVersion">%[11]v</div><div class="td nodeUpdated">%[12]v</div>`
 	var arrow_asc string = "<span>&#9660;</span>"
 	var arrow_desc string = "<span>&#9650;</span>"
-	var nodes_sumstat string = `<div class="tr" id="sum_tr"><div class="td"></div><div class="td">%s</div><div class="td">*</div><div class="td">*</div><div class="td">%.f</div><div class="td">*</div><div class="td">%.2f %s</div><div class="td">%s</div><div class="td">%s</div><div class="td">%s</div><div class="td">*</div><div class="td">*</div></div>`
+	var nodes_sumstat string = `<div class="tr" id="sum_tr"><div class="td"></div><div class="td">%s</div><div class="td"></div><div class="td">*</div><div class="td">*</div><div class="td">%.f</div><div class="td">*</div><div class="td">%.2f %s</div><div class="td">%s</div><div class="td">%s</div><div class="td">%s</div><div class="td">*</div><div class="td">*</div></div>`
+	var nodelookupbody string = `<div id="nodeLookupLoading-%[1]v"><img src="/static/images/loading_checker.gif" alt="Loading"></div><div id="nodeLookupErr-%[1]v"></div><div id="nodeLookupInfo-%[1]v"></div>`
 
 func (c *CLIENT) CheckVersion(actual string) bool {
 	doc := js.Global().Get("document")
@@ -215,11 +217,18 @@ func (c *CLIENT) walletsInfoUpdate() {
 	if c.Wallets == nil {
 		return
 	}
+	doc := js.Global().Get("document")
+	user_wallets := doc.Call("getElementById", "user_wallets")
 	var n = len(c.Wallets.Value.Wallets)
 	if n < 1 {
-		c.W.ShowById("wallets_nf")
+		if user_wallets.Truthy() {
+			user_wallets.Set("innerHTML", "")
+			c.W.ShowById("wallets_nf")
+		}
 		return
 	}
+	c.W.HideById("wallets_nf")
+
 	var wallets string
 	var wclass string
 	var usd_val float64
@@ -238,8 +247,6 @@ func (c *CLIENT) walletsInfoUpdate() {
 			wallets += fmt.Sprintf(wallet_div, wclass, c.Wallets.Value.Wallets[i].Id, c.LANG.WalletTracker["walletname_label"], i+1, c.Wallets.Value.Wallets[i].NknWallet, s)
 		}
 	}
-	doc := js.Global().Get("document")
-	user_wallets := doc.Call("getElementById", "user_wallets")
 	if user_wallets.Truthy() {
 		user_wallets.Set("innerHTML", wallets)
 	}
@@ -668,11 +675,11 @@ func (c *CLIENT) SortAndParseNodes() {
 		case "t_name":
 			if c.Sort_type == "ASC" {
 				sort.SliceStable(c.Nodes.Value.List, func(i, j int) bool {
-					return c.Nodes.Value.List[i].Name > c.Nodes.Value.List[j].Name 
+					return !sortorder.NaturalLess(c.Nodes.Value.List[i].Name, c.Nodes.Value.List[j].Name)
 				})
 			} else {
 				sort.SliceStable(c.Nodes.Value.List, func(i, j int) bool {
-				return c.Nodes.Value.List[i].Name < c.Nodes.Value.List[j].Name 
+					return sortorder.NaturalLess(c.Nodes.Value.List[i].Name, c.Nodes.Value.List[j].Name)
 				})
 			}
 		break
@@ -910,7 +917,7 @@ func (c *CLIENT) SortAndParseNodes() {
 			status = fmt.Sprintf("%s %s", status, link_reference)
 			node_class = "warning_out"
 			sumOffline++
-		case "PRUNING DB", "GENERATION ID", "WAIT_FOR_SYNCING", "SYNC_STARTED", "SYNC_FINISHED":
+		case "PRUNING DB", "GENERATING ID", "WAIT_FOR_SYNCING", "SYNC_STARTED", "SYNC_FINISHED":
 			node_class = "warning"
 			sumOffline++
 		default:
@@ -989,26 +996,26 @@ func (c *CLIENT) SortAndParseNodes() {
 			divs := nodediv.Call("getElementsByTagName", "div")
 
 			divs.Index(1).Set("textContent", r_name)
-			divs.Index(2).Set("textContent", r_ip)
-			divs.Index(3).Set("innerHTML", status)
-			divs.Index(11).Set("textContent", UpdateView)
+			divs.Index(3).Set("textContent", r_ip)
+			divs.Index(4).Set("innerHTML", status)
+			divs.Index(12).Set("textContent", UpdateView)
 
 			if r_err == 0 || r_err == 3 {
-				divs.Index(4).Set("textContent", r_proposal)
-				divs.Index(5).Set("textContent", r_height)
-				divs.Index(6).Set("textContent", UptimeView)
-				divs.Index(7).Set("textContent", RelaysViewK)
-				divs.Index(8).Set("textContent", RelaysViewK10)
-				divs.Index(9).Set("textContent", RelaysViewK60)
-				divs.Index(10).Set("textContent", VersionView)
+				divs.Index(5).Set("textContent", r_proposal)
+				divs.Index(6).Set("textContent", r_height)
+				divs.Index(7).Set("textContent", UptimeView)
+				divs.Index(8).Set("textContent", RelaysViewK)
+				divs.Index(9).Set("textContent", RelaysViewK10)
+				divs.Index(10).Set("textContent", RelaysViewK60)
+				divs.Index(11).Set("textContent", VersionView)
 			} else {
-				divs.Index(4).Set("textContent", "N/A")
 				divs.Index(5).Set("textContent", "N/A")
 				divs.Index(6).Set("textContent", "N/A")
 				divs.Index(7).Set("textContent", "N/A")
 				divs.Index(8).Set("textContent", "N/A")
 				divs.Index(9).Set("textContent", "N/A")
 				divs.Index(10).Set("textContent", "N/A")
+				divs.Index(11).Set("textContent", "N/A")
 			}
 			if err, div_save := c.W.Detach(div_id); err == nil {
 				dom_nodesTable.Call("append", div_save)
@@ -1394,6 +1401,45 @@ func (c *CLIENT) handlingLangPages(view, locale string)  error {
 	return nil
 }
 
+func (c *CLIENT) checkOnline(nodeid int) {
+
+	data := map[string]interface{}{}
+	data["NodeId"] = nodeid
+	sid := strconv.Itoa(nodeid)
+	doc := js.Global().Get("document")
+	gen := doc.Call("getElementById", "nodeLookupGeneral")
+	lookupmodal := doc.Call("getElementById", "nodeLookupModal")
+	modal_title := lookupmodal.Call("querySelector", ".modal-title")
+	if !gen.Truthy() {
+		fmt.Println("nodeLookupGeneral is not found")
+		return
+	}
+
+	nodediv := doc.Call("getElementById", "Node-" + fmt.Sprintf("%v", sid))
+	if !nodediv.Truthy() {
+		fmt.Println("The node is not exists in the node table")
+		return
+	}
+	nodeip := nodediv.Call("querySelector", ".nodeIP")
+	if !nodeip.Truthy() {
+		fmt.Println("The node IP is not found in the node table")
+		return
+	}
+	ip := nodeip.Get("textContent")
+	if !ip.Truthy() {
+		fmt.Println("textContent is not Truthy")
+		return
+	}
+
+	gen.Set("innerHTML", fmt.Sprintf(nodelookupbody, sid))
+	modal_title.Set("textContent", c.LANG.Modal["nodeLookup"]["title"] + " " + fmt.Sprintf("(IP: %[1]v; ID: %[2]v)", ip.String(), sid))
+
+	c.W.HideById("nodeLookupErr-" +sid)
+	c.W.HideById("nodeLookupInfo-" +sid)
+	c.W.ShowById("nodeLookupLoading-" +sid)
+	c.WsSend("getnodedetails", data)
+	c.ShowHideModal("nodeLookup", "show")
+}
 
 func (c *CLIENT) handlingTemplate(html *string, data *map[string]interface{}) (error, string) {
 	var buf bytes.Buffer
@@ -1465,9 +1511,11 @@ func (c *CLIENT) Init() {
 	c.NodesSummary = map[string]map[string]float64{}
 	c.AutoUpdaterStartCh = make(chan bool)
 	c.AutoUpdaterStopCh = make(chan bool)
-
+	c.PingPongStopCh = make(chan bool)
+	
 	c.apiMethods = map[string]func(*WSReply) interface{}{}
 	c.apiMethods["auth"] = c.apiAuth
+	c.apiMethods["logout"] = c.apiLogout
 	c.apiMethods["genid"] = c.apiGenId
 	c.apiMethods["getfullstack"] = c.apiFullstack
 	c.apiMethods["getmynodes"] = c.apiMyNodes
@@ -1477,8 +1525,11 @@ func (c *CLIENT) Init() {
 	c.apiMethods["getdaemon"] = c.apiDaemon
 	c.apiMethods["addnodes"] = c.apiAddNodes
 	c.apiMethods["rmnodes"] = c.apiRmNodes
+	c.apiMethods["rmnodesbyip"] = c.apiRmNodes
 	c.apiMethods["getlanguage"] = c.apiLanguage
 	c.apiMethods["savemysettings"] = c.apiSaveSettings
+	c.apiMethods["getnodedetails"] = c.apiGetNodeDetails
+	c.apiMethods["other"] = c.apiOther
 	c.RegisterEvents()
 	go c.AutoUpdater()
 }
